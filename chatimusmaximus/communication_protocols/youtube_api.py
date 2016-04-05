@@ -1,8 +1,42 @@
+import os
 import sys
 import argparse
+import tempfile
 from time import sleep
-from chatimusmaximus.util import youtube_authentication
+
+import httplib2
+
+from apiclient.discovery import build
+from oauth2client.client import flow_from_clientsecrets
+from oauth2client.file import Storage
+from oauth2client.tools import run_flow, argparser
+
 from chatimusmaximus.communication_protocols.communication_messaging import ZmqMessaging # flake8: noqa
+
+
+_YOUTUBE_API_SERVICE_NAME = 'youtube'
+_YOUTUBE_API_VERSION = 'v3'
+_READ_ONLY = "https://www.googleapis.com/auth/youtube.readonly"
+
+
+def youtube_authentication(client_filepath, youtube_scope=_READ_ONLY):
+    missing_client_message = "You need to populate the client_secrets.json!"
+    flow = flow_from_clientsecrets(client_filepath,
+                                   scope=youtube_scope,
+                                   message=missing_client_message)
+
+    filepath = "{}-oauth2.json".format(sys.argv[0])
+    # remove old oauth files to be safe
+    if os.path.isfile(filepath):
+        os.remove(filepath)
+
+    storage = Storage(filepath)
+    credentials = storage.get()
+    if credentials is None or credentials.invalid:
+        credentials = run_flow(flow, storage, argparser.parse_args())
+        return build(_YOUTUBE_API_SERVICE_NAME,
+                     _YOUTUBE_API_VERSION,
+                     http=credentials.authorize(httplib2.Http()))
 
 
 def main(client_secret_filepath, socket_address):
@@ -11,7 +45,16 @@ def main(client_secret_filepath, socket_address):
              'https://www.googleapis.com/auth/youtube.force-ssl',
              'https://www.googleapis.com/auth/youtube.readonly']
 
-    youtube_api = youtube_authentication(client_secret_filepath, scope)
+    # If program is installed as root, can't access the oauth file
+    # created by youtube. Get around this be creating a temporary 
+    # directory and changing into it before running command
+    starting_directory = os.getcwd()
+    with tempfile.TemporaryDirectory() as tempdir:
+        os.chdir(tempdir)
+        youtube_api = youtube_authentication(client_secret_filepath, scope)
+
+    os.chdir(starting_directory)
+
     parts = 'snippet'
     livestream_response = youtube_api.liveBroadcasts().list(mine=True,
                                                             part=parts,
