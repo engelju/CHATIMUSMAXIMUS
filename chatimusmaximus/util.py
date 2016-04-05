@@ -1,6 +1,3 @@
-import os
-import sys
-
 from chatimusmaximus.plugin_wrapper import PluginWrapper
 
 
